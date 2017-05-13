@@ -29,8 +29,22 @@ def experts_rewards(K,T,process_type):
         for curr_times in range(1,T):
             rewards.append([ muc[j]+math.pow(curr_times,-theta[j])  for j in range(len(theta))])
 
-
     elif process_type==3:
+        #rarely changing means (10 times over T rounds)
+        num_mean_changes=np.random.randint(1,10,K)
+
+        mean_time_change=[]
+        means=[]
+        for arm in range(K):
+            mean_time_change.append(np.linspace(1,T,num_mean_changes[arm])) # 10 random time changes from [1,T] for each arm in K
+            means.append( [random.uniform(1,5) for r in xrange(num_mean_changes[arm])] ) #10 random means from [1,5] for each arm in K
+
+        for curr_times in range(1,T):
+            rewards.append([ np.random.normal(means[j][np.argmax(mean_time_change[j]>curr_times)],0.5)  for j in range(K)])
+             
+
+
+    elif process_type==6:
         #random processes
         # Y_t=Y_{t-1}*alpha_t+ guassian noise
         alpha_change= np.linspace(1.0, T, num=K)
@@ -68,7 +82,7 @@ def weights_q(curr_time,process_type):
         #rotting arms
         q=(1.0/curr_time)*np.ones(curr_time)
 
-    elif process_type==3:
+    elif process_type==6:
      #general process
          q=(1.0/curr_time)*np.ones(curr_time) #FIX THIS
     else:
@@ -125,14 +139,14 @@ def ucb(K,T,process_type):
 if __name__ == "__main__":
 
     K=5 #experts
-    T=10 #time horizon
-    curr_time=2
-    process_type=1
+    T=50 #time horizon
+    curr_time=4
+    process_type=3
     prev_experts=range(K)
 
     allrewards=experts_rewards(K,T,process_type)
-    wq=weights_q(curr_time,process_type)
-    print allrewards
+#    wq=weights_q(curr_time,process_type)
+#    print allrewards
 
 
     
