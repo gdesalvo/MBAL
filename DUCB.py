@@ -30,14 +30,14 @@ def experts_rewards(K,T,process_type):
             rewards.append([ muc[j]+math.pow(curr_times,-theta[j])  for j in range(len(theta))])
 
     elif process_type==3:
-        #rarely changing means (10 times over T rounds)
+        #rarely changing means 
         num_mean_changes=np.random.randint(1,10,K)
 
         mean_time_change=[]
         means=[]
         for arm in range(K):
-            mean_time_change.append(np.linspace(1,T,num_mean_changes[arm])) # 10 random time changes from [1,T] for each arm in K
-            means.append( [random.uniform(1,5) for r in xrange(num_mean_changes[arm])] ) #10 random means from [1,5] for each arm in K
+            mean_time_change.append(np.linspace(1,T,num_mean_changes[arm])) 
+            means.append( [random.uniform(1,5) for r in xrange(num_mean_changes[arm])] ) 
 
         for curr_times in range(1,T):
             rewards.append([ np.random.normal(means[j][np.argmax(mean_time_change[j]>curr_times)],0.5)  for j in range(K)])
