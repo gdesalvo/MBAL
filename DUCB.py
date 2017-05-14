@@ -42,7 +42,18 @@ def experts_rewards(K,T,process_type):
         for curr_times in range(1,T):
             rewards.append([ np.random.normal(means[j][np.argmax(mean_time_change[j]>curr_times)],0.5)  for j in range(K)])
              
-
+    elif process_type==4:
+        #drifting
+        prev=[random.uniform(0,1) for r in xrange(K)]
+#        offset=[random.uniform(0.0001,1) for r in xrange(K)]
+#        rewards.append([prev[i]+offset[i] for i in range(K)])
+        rewards.append(prev)
+        for curr_times in range(1,T):
+            pm=np.random.choice([-1.0, 1.0], size=(K,), p=[1./2, 1./2])
+            curr=[prev[j]+math.pow(T,-3.0/2.0)*pm[j] for j in range(K)]
+            rewards.append(curr)
+ #           rewards.append([curr[i]+offset[i] for i in range(K)])
+            prev=curr
 
     elif process_type==6:
         #random processes
@@ -141,12 +152,12 @@ if __name__ == "__main__":
     K=5 #experts
     T=50 #time horizon
     curr_time=4
-    process_type=3
+    process_type=4
     prev_experts=range(K)
 
     allrewards=experts_rewards(K,T,process_type)
 #    wq=weights_q(curr_time,process_type)
-#    print allrewards
+    print allrewards
 
 
     
