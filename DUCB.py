@@ -6,7 +6,7 @@ matplotlib.use('Agg')
 import numpy as np
 import matplotlib.pyplot as plt
 matplotlib.rcParams.update({'font.size': 22})
-random.seed(3428)
+random.seed(342)
 
 
 
@@ -18,7 +18,8 @@ def experts_rewards(K,T,process_type):
     rewards=[]
     if process_type==1:
         #IID.
-        mean=np.linspace(5,10,K) 
+        mean=np.linspace(1,5,K) 
+        np.random.shuffle(mean)
         for t in range(1,T):
             rewards.append([np.random.normal(i,0.5) for i in mean])
 
@@ -44,7 +45,8 @@ def experts_rewards(K,T,process_type):
              
     elif process_type==4:
         #drifting
-        prev=[random.uniform(0,1) for r in xrange(K)]
+        prev=[random.uniform(1,5) for r in xrange(K)]
+
 #        offset=[random.uniform(0.0001,1) for r in xrange(K)]
 #        rewards.append([prev[i]+offset[i] for i in range(K)])
         rewards.append(prev)
@@ -84,14 +86,14 @@ def experts_rewards(K,T,process_type):
         
 
 
-def weights_q(curr_time,process_type):
-    if process_type ==1:
-        #IID
+def weights_q(curr_time,process_type,arm,mean_time_change):
+    if process_type ==1 or process_type==2 or process_type==4:
+        #IID, rotting arms, drifting
         q=(1.0/curr_time)*np.ones(curr_time)
 
-    elif process_type==2:
-        #rotting arms
-        q=(1.0/curr_time)*np.ones(curr_time)
+    elif process_type==3:
+        #changing means DOUBLE CHECK THIS
+        q=(1.0/(curr_time-mean_time_change[arm][np.argmax(mean_time_change[arm]>curr_times)] +1))*np.ones(curr_time)
 
     elif process_type==6:
      #general process
@@ -106,43 +108,42 @@ def emp_avg(rewards,weights_q):
      return sum(rewards[:]*weights_q[:])
      
 
-def slack(weight_q,time,beta):
-    return np.linalg.norm(weight_q)*math.sqrt(beta*math.log(time))
+#def slack(weight_q,time,beta):
+#    return np.linalg.norm(weight_q)*math.sqrt(beta*math.log(time))
+
+def slack(num_pulled,beta,T):
+    return math.sqrt(beta*math.log(T)/(2.0*num_pulled) )
 
 
 def ucb(K,T,process_type): 
-    
-    exp_rewards=experts_rewards(K,T,process_type)
-   #TODO WRITE THE UCB ALGORITHM BELOW. 
+    beta=3.0 #beta of UCB confidence
 
+    exp_rewards=experts_rewards(K,T,4)
+    print exp_rewards
     # #initialization step
-    # reward_alg = 0
+    reward_alg = 0
+    emp_avg=[0]*K
+    for i in range(K):
+        emp_avg[i]=exp_rewards[0][i]
+        reward_alg+= exp_rewards[0][i]
+        expert_pulls = [1.0] * K #everyone is pulled once in intiliazation step
 
-    # for i in range(K):
-    #     exp_reward = rej_loss(dat[i][1], expert_label, c)
-    #     expert_avg.append(exp_reward)
-    #     loss_alg += exp_loss
-    #     expert_pulls = [1.0] * K #everyone is pulled once in intiliazation step
+    for t in range(K, T):
+        #find best arm
+        ucb_list = [emp_avg[i] + slack(expert_pulls[i],beta,T) for i in range(K)] #soinefficient
+        best_arm = ucb_list.index(max(ucb_list)) 
 
-    # for t in range(K, T):
-    #     #find best arm
-    #     ucb_list = [emp_avg[i] + slack[i] for i in range(K)] #soinefficient
-    #     best_arm = ucb_list.index(max(ucb_list)) 
+        best_expert_reward=exp_rewards[expert_pulls[best_arm]][best_arm]
+        print best_arm
+        expert_pulls[best_arm] += 1 #update number of times arm is pulled
+        #update emp average of expert
+        inv_pull = 1.0 / expert_pulls[best_arm]
+        emp_avg[best_arm] = best_expert_reward * inv_pull + (1-inv_pull) * emp_avg[best_arm]
 
+        #update regret
+        reward_alg += best_expert_reward
 
-    #     expert_pulls[best_arm] += 1 #update number of times arm is pulled
-
-    #     #update loss of best arm average
-    #     inv_pull = 1.0 / expert_pulls[best_arm]
-    #     expert_loss = rej_loss(dat[t][1], exp_label(dat[t][0], experts[best_arm]), c)
-    #     expert_avg[best_arm] = expert_loss * inv_pull + (1-inv_pull) * expert_avg[best_arm]
-    #     if exp_label(dat[t][0],experts[best_arm]) == -1:
-    #         count_rej+=1
-
-    #     #update regret
-    #     loss_alg += expert_loss
-
-    # return loss_alg / float(T) , count_rej/float(T)
+    return reward_alg / float(T) 
 
 
 
@@ -151,13 +152,14 @@ if __name__ == "__main__":
 
     K=5 #experts
     T=50 #time horizon
-    curr_time=4
-    process_type=4
-    prev_experts=range(K)
+  #  curr_time=4
+    process_type=1
+ #   prev_experts=range(K)
 
-    allrewards=experts_rewards(K,T,process_type)
+#    allrewards=experts_rewards(K,T,process_type)
+#    print allrewards
 #    wq=weights_q(curr_time,process_type)
-    print allrewards
+    print ucb(K,T,process_type)
 
 
     
