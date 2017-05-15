@@ -18,20 +18,22 @@ def experts_rewards(K,T,process_type):
     rewards=[]
     if process_type==1:
         #IID.
-        mean=np.linspace(0.02,4,K) 
+        mean=np.linspace(0.01,0.99,K) 
 #        np.random.shuffle(mean)
         for t in range(1,T):
-            rewards.append([np.random.normal(i,0.1) for i in mean])
+            rewards.append([  np.random.binomial(1, i, 1)[0] for i in mean])
         return np.array(rewards)
 
     elif process_type==2:
         #rotting arms
         theta=np.linspace(0.5,10,num=K) 
         np.random.shuffle(theta)
-        muc=np.linspace(0,1,num=K) 
-        np.random.shuffle(muc)
+#        muc=np.linspace(0,0.5,num=K) 
+#        np.random.shuffle(muc)
+        muc=[0]*K
+
         for curr_times in range(1,T):
-            rewards.append([ muc[j]+math.pow(curr_times,-theta[j])  for j in range(len(theta))])
+            rewards.append([ np.random.binomial(1,muc[j]+math.pow(curr_times,-theta[j]),1)[0]  for j in range(len(theta))]) 
         return np.array(rewards)
 
     elif process_type==3:
@@ -42,29 +44,29 @@ def experts_rewards(K,T,process_type):
         means=[]
         for arm in range(K):
             mean_time_change.append(np.linspace(1,T,num_mean_changes[arm])) 
-            means.append( [random.uniform(0,1) for r in xrange(num_mean_changes[arm])] ) 
+            means.append( [random.uniform(0.01,0.99) for r in xrange(num_mean_changes[arm])] ) 
 
         for curr_times in range(1,T):
-
-            rewards.append([ np.random.normal(means[j][np.argmax(mean_time_change[j]>curr_times)],0.5)  for j in range(K)])
+            rewards.append([ np.random.binomial(1,means[j][np.argmax(mean_time_change[j]>curr_times)],1)[0]  for j in range(K)])
         return np.array(rewards),mean_time_change
+
     elif process_type==4:
         #drifting
-        prev=[random.uniform(0,1) for r in xrange(K)]
+        prev=[random.uniform(0.01+1.0/math.sqrt(T),0.99-1.0/math.sqrt(T)) for r in range(K)]
 
 #        offset=[random.uniform(0.0001,1) for r in xrange(K)]
 #        rewards.append([prev[i]+offset[i] for i in range(K)])
-        rewards.append(prev)
+
         for curr_times in range(1,T):
             pm=np.random.choice([-1.0, 1.0], size=(K,), p=[1./2, 1./2])
-            curr=[prev[j]+math.pow(T,-3.0/2.0)*pm[j] for j in range(K)]
-            rewards.append(curr)
+            rewards.append([ np.random.binomial(1,prev[j]+math.pow(T,-3.0/2.0)*pm[j],1)[0] for j in range(K)])
  #           rewards.append([curr[i]+offset[i] for i in range(K)])
-            prev=curr
+            prev=[prev[j]+math.pow(T,-3.0/2.0)*pm[j] for j in range(K)]
+
         return np.array(rewards)
 
     elif process_type==6:
-        #random processes
+        #random processes FIX BELOW. 
         # Y_t=Y_{t-1}*alpha_t+ guassian noise
         alpha_change= np.linspace(1.0, T, num=K)
         rewards.append([0.0]*K)
@@ -96,7 +98,7 @@ def experts_rewards(K,T,process_type):
 def calc_weights_q(curr_time,process_type,mtt_change):
     if process_type ==1 or process_type==2 or process_type==4:
         #IID, rotting arms, drifting
-        q=(1.0/curr_time)*np.ones(int(curr_time))
+        q=(1.0/curr_time)*np.ones(int(curr_time)) #FIX THIS
 
     elif process_type==3: #add input to function mean_time_change and arm
 #        #changing means DOUBLE CHECK THIS
@@ -144,7 +146,7 @@ def exp3(K,T,process_type,exp_rewards):
 
 
 def ucb(K,T,process_type,exp_rewards): 
-    beta=3.0 #beta of UCB confidence
+    beta=3.0 #beta of UCB confidence. need to update this alg. deprecated
 
     # #initialization step
     reward_alg = [0]
@@ -157,7 +159,7 @@ def ucb(K,T,process_type,exp_rewards):
     for t in range(K, T):
         #find best arm
         ucb_list = [emp_avg[i] + slack(expert_pulls[i],beta,t) for i in range(K)] #soinefficient
-        best_arm = ucb_list.index(max(ucb_list)) 
+        best_arm = ucb_list.index(max(ucb_list)[0]) 
 
         best_expert_reward=exp_rewards[int(expert_pulls[best_arm])][best_arm]
 
@@ -178,6 +180,7 @@ def disc_ucb(K,T,process_type,exp_rewards,mt_changes):
 #    exp_rewards=experts_rewards(K,T,4)
 #    print exp_rewards
     #initialization step
+
     reward_alg = [0]
     emp_avg=[0]*K
     for i in range(K):
@@ -188,9 +191,8 @@ def disc_ucb(K,T,process_type,exp_rewards,mt_changes):
     for t in range(K, T):
         #find best arm
         weights_q= [calc_weights_q(expert_pulls[i],process_type,mt_changes[i])    for i in range(K) ]
-
         ucb_list = [calc_emp_avg(emp_avg[i],weights_q[i]) + calc_slack(weights_q[i],beta,t) for i in range(K)] #soinefficient
-        best_arm = ucb_list.index(max(ucb_list)) 
+        best_arm = ucb_list.index(max(ucb_list))
 
         best_expert_reward=exp_rewards[int(expert_pulls[best_arm])][best_arm]
         expert_pulls[best_arm] += 1 #update number of times arm is pulled
@@ -210,32 +212,33 @@ def disc_ucb(K,T,process_type,exp_rewards,mt_changes):
 
 if __name__ == "__main__":
 
-    K=100 #experts
-    T=5000 #time horizon
+    K=10 #experts
+    T=100 #time horizon
     process_type=1
     t=range(T+1)
 
     for process_type in range(1,5):
         if process_type!=3:
-
+            print 'type'
+            print process_type
             exp_rewards=experts_rewards(K,T,process_type)
             mean_tchanges=[0]*K
-            du=ucb(K,T,process_type,exp_rewards)
             de=disc_ucb(K,T,process_type,exp_rewards,mean_tchanges)
             ee=exp3(K,T,process_type,exp_rewards)
+
             plt.figure()
-            plt.plot(t, de, 'r-', t,ee, 'b-',t,du,'g-')
+            plt.plot(t, de, 'r-', t,ee, 'b-')
             plt.title('Process type'+str(process_type))
             plt.show()
 
         else:
             exp_rewards,mean_tchanges=experts_rewards(K,T,process_type)
-            du=ucb(K,T,process_type,exp_rewards)
+            
             de=disc_ucb(K,T,process_type,exp_rewards,mean_tchanges)
             ee=exp3(K,T,process_type,exp_rewards)
 
             plt.figure()
-            plt.plot(t, de, 'r-', t,ee, 'b-',t,du,'g-')
+            plt.plot(t, de, 'r-', t,ee, 'b-')
             plt.title('Process type'+str(process_type))
             plt.show()
 
