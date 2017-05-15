@@ -18,15 +18,17 @@ def experts_rewards(K,T,process_type):
     rewards=[]
     if process_type==1:
         #IID.
-        mean=np.linspace(1,5,K) 
-        np.random.shuffle(mean)
+        mean=np.linspace(0.02,4,K) 
+#        np.random.shuffle(mean)
         for t in range(1,T):
-            rewards.append([np.random.normal(i,0.5) for i in mean])
+            rewards.append([np.random.normal(i,0.1) for i in mean])
 
     elif process_type==2:
         #rotting arms
         theta=np.linspace(0.5,10,num=K) 
-        muc=np.linspace(0,5,num=K) 
+        np.random.shuffle(theta)
+        muc=np.linspace(0,1,num=K) 
+        np.random.shuffle(muc)
         for curr_times in range(1,T):
             rewards.append([ muc[j]+math.pow(curr_times,-theta[j])  for j in range(len(theta))])
 
@@ -38,14 +40,14 @@ def experts_rewards(K,T,process_type):
         means=[]
         for arm in range(K):
             mean_time_change.append(np.linspace(1,T,num_mean_changes[arm])) 
-            means.append( [random.uniform(1,5) for r in xrange(num_mean_changes[arm])] ) 
+            means.append( [random.uniform(0,1) for r in xrange(num_mean_changes[arm])] ) 
 
         for curr_times in range(1,T):
             rewards.append([ np.random.normal(means[j][np.argmax(mean_time_change[j]>curr_times)],0.5)  for j in range(K)])
              
     elif process_type==4:
         #drifting
-        prev=[random.uniform(1,5) for r in xrange(K)]
+        prev=[random.uniform(0,1) for r in xrange(K)]
 
 #        offset=[random.uniform(0.0001,1) for r in xrange(K)]
 #        rewards.append([prev[i]+offset[i] for i in range(K)])
@@ -89,7 +91,7 @@ def experts_rewards(K,T,process_type):
 def calc_weights_q(curr_time,process_type):
     if process_type ==1 or process_type==2 or process_type==4:
         #IID, rotting arms, drifting
-        q=(1.0/curr_time)*np.ones(curr_time)
+        q=(1.0/curr_time)*np.ones(int(curr_time))
 
 #    elif process_type==3: #add input to function mean_time_change and arm
 #        #changing means DOUBLE CHECK THIS
@@ -111,8 +113,29 @@ def calc_emp_avg(rewards,weight):
 def calc_slack(weight_q,beta,time):
     return np.linalg.norm(weight_q)*math.sqrt(beta*math.log(time))
 
-def slack(num_pulled,beta,T):
-    return math.sqrt(beta*math.log(T)/(2.0*num_pulled) )
+def slack(num_pulled,beta,time):
+    return math.sqrt(beta*math.log(time)/(2.0*num_pulled) )
+
+
+def exp3(K,T,process_type,exp_rewards):
+    eta=1.0/float(K*T)
+    prob=[1/float(K)]*K
+
+    L=[0]*K
+    expert_pulls=[0]*K
+    reward_alg = 0
+    for t in range(1,T):
+        arm=np.random.choice(np.arange(0,K), p=prob)
+
+        curr_rew=exp_rewards[int(expert_pulls[arm])][arm]
+        reward_alg +=curr_rew
+        L[arm]+=curr_rew/prob[arm]
+        expert_pulls[arm]+=1
+        prob[arm]=math.exp(eta*L[arm])
+        tmp=prob
+        prob=[jj/sum(tmp) for jj in tmp]
+
+    return reward_alg/float(T)
 
 
 def ucb(K,T,process_type,exp_rewards): 
@@ -128,11 +151,11 @@ def ucb(K,T,process_type,exp_rewards):
 
     for t in range(K, T):
         #find best arm
-        ucb_list = [emp_avg[i] + slack(expert_pulls[i],beta,T) for i in range(K)] #soinefficient
+        ucb_list = [emp_avg[i] + slack(expert_pulls[i],beta,t) for i in range(K)] #soinefficient
         best_arm = ucb_list.index(max(ucb_list)) 
 
-        best_expert_reward=exp_rewards[expert_pulls[best_arm]][best_arm]
-        print best_arm
+        best_expert_reward=exp_rewards[int(expert_pulls[best_arm])][best_arm]
+
         expert_pulls[best_arm] += 1 #update number of times arm is pulled
         #update emp average of expert
         inv_pull = 1.0 / expert_pulls[best_arm]
@@ -160,15 +183,16 @@ def disc_ucb(K,T,process_type,exp_rewards):
     for t in range(K, T):
         #find best arm
         weights_q= [calc_weights_q(expert_pulls[i],process_type)    for i in range(K) ]
+
         ucb_list = [calc_emp_avg(emp_avg[i],weights_q[i]) + calc_slack(weights_q[i],beta,t) for i in range(K)] #soinefficient
         best_arm = ucb_list.index(max(ucb_list)) 
 
-        best_expert_reward=exp_rewards[expert_pulls[best_arm]][best_arm]
+        best_expert_reward=exp_rewards[int(expert_pulls[best_arm])][best_arm]
         expert_pulls[best_arm] += 1 #update number of times arm is pulled
 
         #update emp average of expert
         emp_avg[best_arm].append(best_expert_reward)
-        print best_arm
+
 
         #update regret
         reward_alg += best_expert_reward
@@ -181,8 +205,8 @@ def disc_ucb(K,T,process_type,exp_rewards):
 
 if __name__ == "__main__":
 
-    K=5 #experts
-    T=50 #time horizon
+    K=3 #experts
+    T=100 #time horizon
   #  curr_time=4
     process_type=1
  #   prev_experts=range(K)
@@ -192,9 +216,11 @@ if __name__ == "__main__":
 #    wq=weights_q(curr_time,process_type)
     exp_rewards=experts_rewards(K,T,process_type)
     print exp_rewards
+    print 'ucb'
     print ucb(K,T,process_type,exp_rewards)
-    print disc_ucb(K,T,process_type,exp_rewards)
-
+    print 'exp3'
+#    print disc_ucb(K,T,process_type,exp_rewards)
+    print exp3(K,T,process_type,exp_rewards)
 
     
    # print emp_avg(allrewards[:curr_time,1],wq)
