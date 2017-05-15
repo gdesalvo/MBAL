@@ -1,11 +1,11 @@
 import random
 import math
 import sys
-import matplotlib
-matplotlib.use('Agg')
+#import matplotlib
+#matplotlib.use('Agg')
 import numpy as np
 import matplotlib.pyplot as plt
-matplotlib.rcParams.update({'font.size': 22})
+#matplotlib.rcParams.update({'font.size': 22})
 random.seed(34223)
 
 
@@ -22,6 +22,7 @@ def experts_rewards(K,T,process_type):
 #        np.random.shuffle(mean)
         for t in range(1,T):
             rewards.append([np.random.normal(i,0.1) for i in mean])
+        return np.array(rewards)
 
     elif process_type==2:
         #rotting arms
@@ -31,6 +32,7 @@ def experts_rewards(K,T,process_type):
         np.random.shuffle(muc)
         for curr_times in range(1,T):
             rewards.append([ muc[j]+math.pow(curr_times,-theta[j])  for j in range(len(theta))])
+        return np.array(rewards)
 
     elif process_type==3:
         #rarely changing means 
@@ -43,8 +45,9 @@ def experts_rewards(K,T,process_type):
             means.append( [random.uniform(0,1) for r in xrange(num_mean_changes[arm])] ) 
 
         for curr_times in range(1,T):
+
             rewards.append([ np.random.normal(means[j][np.argmax(mean_time_change[j]>curr_times)],0.5)  for j in range(K)])
-             
+        return np.array(rewards),mean_time_change
     elif process_type==4:
         #drifting
         prev=[random.uniform(0,1) for r in xrange(K)]
@@ -58,6 +61,7 @@ def experts_rewards(K,T,process_type):
             rewards.append(curr)
  #           rewards.append([curr[i]+offset[i] for i in range(K)])
             prev=curr
+        return np.array(rewards)
 
     elif process_type==6:
         #random processes
@@ -77,25 +81,27 @@ def experts_rewards(K,T,process_type):
 
             rewards.append([prev_experts[j]*alphat[j] + noise[j]  for j in range(K)])
         rewards=rewards[1:]
+        return np.array(rewards)
     else:
         print 'not avaialbe type'
-
-
-    return np.array(rewards)
+        return []
+        
+    
 
 
 
         
 
 
-def calc_weights_q(curr_time,process_type):
+def calc_weights_q(curr_time,process_type,mtt_change):
     if process_type ==1 or process_type==2 or process_type==4:
         #IID, rotting arms, drifting
         q=(1.0/curr_time)*np.ones(int(curr_time))
 
-#    elif process_type==3: #add input to function mean_time_change and arm
+    elif process_type==3: #add input to function mean_time_change and arm
 #        #changing means DOUBLE CHECK THIS
-#        q=(1.0/(curr_time-mean_time_change[arm][np.argmax(mean_time_change[arm]>curr_times)] +1))*np.ones(curr_time)
+
+        q=(1.0/(curr_time-mtt_change[np.argmax(mtt_change>curr_time)-1] +1))*np.ones(int(curr_time))
 
     elif process_type==6:
      #general process
@@ -123,30 +129,29 @@ def exp3(K,T,process_type,exp_rewards):
 
     L=[0]*K
     expert_pulls=[0]*K
-    reward_alg = 0
-    for t in range(1,T):
+    reward_alg = [0]
+    for t in range(T):
         arm=np.random.choice(np.arange(0,K), p=prob)
-
         curr_rew=exp_rewards[int(expert_pulls[arm])][arm]
-        reward_alg +=curr_rew
+        reward_alg.append((reward_alg[-1]*float(t)+curr_rew)/float(t+1))
         L[arm]+=curr_rew/prob[arm]
         expert_pulls[arm]+=1
         prob[arm]=math.exp(eta*L[arm])
         tmp=prob
         prob=[jj/sum(tmp) for jj in tmp]
 
-    return reward_alg/float(T)
+    return reward_alg
 
 
 def ucb(K,T,process_type,exp_rewards): 
     beta=3.0 #beta of UCB confidence
 
     # #initialization step
-    reward_alg = 0
+    reward_alg = [0]
     emp_avg=[0]*K
     for i in range(K):
         emp_avg[i]=exp_rewards[0][i]
-        reward_alg+= exp_rewards[0][i]
+        reward_alg.append( (reward_alg[-1]*float(i)+exp_rewards[0][i])/float(i+1))
         expert_pulls = [1.0] * K #everyone is pulled once in intiliazation step
 
     for t in range(K, T):
@@ -162,27 +167,27 @@ def ucb(K,T,process_type,exp_rewards):
         emp_avg[best_arm] = best_expert_reward * inv_pull + (1-inv_pull) * emp_avg[best_arm]
 
         #update regret
-        reward_alg += best_expert_reward
+        reward_alg.append((reward_alg[-1]*float(t)+best_expert_reward)/float(t+1))
 
-    return reward_alg / float(T) 
+    return reward_alg
 
 
-def disc_ucb(K,T,process_type,exp_rewards): 
+def disc_ucb(K,T,process_type,exp_rewards,mt_changes): 
     beta=3.0 #beta of UCB confidence
 
 #    exp_rewards=experts_rewards(K,T,4)
 #    print exp_rewards
     #initialization step
-    reward_alg = 0
+    reward_alg = [0]
     emp_avg=[0]*K
     for i in range(K):
         emp_avg[i]=[exp_rewards[0][i]]
-        reward_alg+= exp_rewards[0][i]
+        reward_alg.append( (reward_alg[-1]*float(i)+exp_rewards[0][i])/float(i+1))
         expert_pulls = [1.0] * K #everyone is pulled once in intiliazation step
 
     for t in range(K, T):
         #find best arm
-        weights_q= [calc_weights_q(expert_pulls[i],process_type)    for i in range(K) ]
+        weights_q= [calc_weights_q(expert_pulls[i],process_type,mt_changes[i])    for i in range(K) ]
 
         ucb_list = [calc_emp_avg(emp_avg[i],weights_q[i]) + calc_slack(weights_q[i],beta,t) for i in range(K)] #soinefficient
         best_arm = ucb_list.index(max(ucb_list)) 
@@ -195,9 +200,9 @@ def disc_ucb(K,T,process_type,exp_rewards):
 
 
         #update regret
-        reward_alg += best_expert_reward
+        reward_alg.append((reward_alg[-1]*float(t)+best_expert_reward)/float(t+1))
 
-    return reward_alg / float(T) 
+    return reward_alg 
 
 
 
@@ -205,22 +210,39 @@ def disc_ucb(K,T,process_type,exp_rewards):
 
 if __name__ == "__main__":
 
-    K=3 #experts
-    T=100 #time horizon
-  #  curr_time=4
+    K=100 #experts
+    T=5000 #time horizon
     process_type=1
- #   prev_experts=range(K)
+    t=range(T+1)
 
-#    allrewards=experts_rewards(K,T,process_type)
-#    print allrewards
-#    wq=weights_q(curr_time,process_type)
-    exp_rewards=experts_rewards(K,T,process_type)
-    print exp_rewards
-    print 'ucb'
-    print ucb(K,T,process_type,exp_rewards)
-    print 'exp3'
-#    print disc_ucb(K,T,process_type,exp_rewards)
-    print exp3(K,T,process_type,exp_rewards)
+    for process_type in range(1,5):
+        if process_type!=3:
+
+            exp_rewards=experts_rewards(K,T,process_type)
+            mean_tchanges=[0]*K
+            du=ucb(K,T,process_type,exp_rewards)
+            de=disc_ucb(K,T,process_type,exp_rewards,mean_tchanges)
+            ee=exp3(K,T,process_type,exp_rewards)
+            plt.figure()
+            plt.plot(t, de, 'r-', t,ee, 'b-',t,du,'g-')
+            plt.title('Process type'+str(process_type))
+            plt.show()
+
+        else:
+            exp_rewards,mean_tchanges=experts_rewards(K,T,process_type)
+            du=ucb(K,T,process_type,exp_rewards)
+            de=disc_ucb(K,T,process_type,exp_rewards,mean_tchanges)
+            ee=exp3(K,T,process_type,exp_rewards)
+
+            plt.figure()
+            plt.plot(t, de, 'r-', t,ee, 'b-',t,du,'g-')
+            plt.title('Process type'+str(process_type))
+            plt.show()
+
+
+    
+
+
 
     
    # print emp_avg(allrewards[:curr_time,1],wq)
