@@ -1,28 +1,30 @@
 import random
 import math
 import sys
-#import matplotlib
+import matplotlib
 #matplotlib.use('Agg')
 import numpy as np
 import matplotlib.pyplot as plt
-#matplotlib.rcParams.update({'font.size': 22})
-random.seed(34223)
+matplotlib.rcParams.update({'font.size': 22})
+np.random.seed(34223)
 
 
-
-
-def experts_rewards(K,T,process_type):
+def experts_rewards(K,T,process_type,num_folds):
     #pre-calculate all rewards for different settings
     #returns reward matrix where row is time and column is experts. That is each row contains the all the experts rewards at time t.
     # time starts from 1!
-    rewards=[]
+    rew={}
+
     if process_type==1:
         #IID.
-        mean=np.linspace(0.01,0.99,K) 
-#        np.random.shuffle(mean)
-        for t in range(1,T):
-            rewards.append([  np.random.binomial(1, i, 1)[0] for i in mean])
-        return np.array(rewards)
+        mean=np.linspace(0.01,0.99,K) #weird to have prob=1 or prob=0 for binomial
+        np.random.shuffle(mean)
+        for fold in range(num_folds):
+            rewards=[]
+            for t in range(1,T+1):
+                rewards.append([  np.random.binomial(1, i, 1)[0] for i in mean])
+            rew[fold]=np.array(rewards)
+        return rew
 
     elif process_type==2:
         #rotting arms
@@ -30,47 +32,54 @@ def experts_rewards(K,T,process_type):
         np.random.shuffle(theta)
 #        muc=np.linspace(0,0.5,num=K) 
 #        np.random.shuffle(muc)
-        muc=[0]*K
-
-        for curr_times in range(1,T):
-            rewards.append([ np.random.binomial(1,muc[j]+math.pow(curr_times,-theta[j]),1)[0]  for j in range(len(theta))]) 
-        return np.array(rewards)
+        muc=[0]*K  # should prob just remove this
+        for fold in range(num_folds):
+            rewards=[]
+            for curr_times in range(1,T+1):
+                rewards.append([ np.random.binomial(1,muc[j]+math.pow(curr_times,-theta[j]),1)[0]  for j in range(len(theta))]) 
+            rew[fold]=np.array(rewards)
+        return rew
 
     elif process_type==3:
+
         #rarely changing means 
         num_mean_changes=np.random.randint(1,10,K)
-
+        
         mean_time_change=[]
         means=[]
-        for arm in range(K):
-            mean_time_change.append(np.linspace(1,T,num_mean_changes[arm])) 
-            means.append( [random.uniform(0.01,0.99) for r in xrange(num_mean_changes[arm])] ) 
 
-        for curr_times in range(1,T):
-            rewards.append([ np.random.binomial(1,means[j][np.argmax(mean_time_change[j]>curr_times)],1)[0]  for j in range(K)])
-        return np.array(rewards),mean_time_change
+        for arm in range(K):
+            mean_time_change.append(np.linspace(1,T+1,num_mean_changes[arm])) 
+            means.append( [random.uniform(0.01,0.99) for r in xrange(num_mean_changes[arm])] ) 
+        for fold in range(num_folds):
+            rewards=[]
+            for curr_times in range(1,T+1):
+                rewards.append([ np.random.binomial(1,means[j][np.argmax(mean_time_change[j]>curr_times)],1)[0]  for j in range(K)])
+            rew[fold]=np.array(rewards)
+
+        return rew,mean_time_change
 
     elif process_type==4:
         #drifting
         prev=[random.uniform(0.01+1.0/math.sqrt(T),0.99-1.0/math.sqrt(T)) for r in range(K)]
+        pm=[np.random.choice([-1.0, 1.0], size=(K,), p=[1./2, 1./2]) for tt in range(T+1)]
 
 #        offset=[random.uniform(0.0001,1) for r in xrange(K)]
 #        rewards.append([prev[i]+offset[i] for i in range(K)])
-
-        for curr_times in range(1,T):
-            pm=np.random.choice([-1.0, 1.0], size=(K,), p=[1./2, 1./2])
-            rewards.append([ np.random.binomial(1,prev[j]+math.pow(T,-3.0/2.0)*pm[j],1)[0] for j in range(K)])
- #           rewards.append([curr[i]+offset[i] for i in range(K)])
-            prev=[prev[j]+math.pow(T,-3.0/2.0)*pm[j] for j in range(K)]
-
-        return np.array(rewards)
+        for fold in range(num_folds):
+            rewards=[]
+            for curr_times in range(1,T+1):
+                rewards.append([ np.random.binomial(1,prev[j]+math.pow(T,-3.0/2.0)*pm[curr_times][j],1)[0] for j in range(K)])
+                prev=[prev[j]+math.pow(T,-3.0/2.0)*pm[curr_times][j] for j in range(K)]
+            rew[fold]=np.array(rewards)
+        return rew
 
     elif process_type==6:
         #random processes FIX BELOW. 
         # Y_t=Y_{t-1}*alpha_t+ guassian noise
-        alpha_change= np.linspace(1.0, T, num=K)
+        alpha_change= np.linspace(1.0, T+1, num=K)
         rewards.append([0.0]*K)
-        for curr_times in range(1,T):        
+        for curr_times in range(1,T+1):        
             noise=np.random.normal(0, 1, K)
             prev_experts=rewards[-1]
 
@@ -126,9 +135,8 @@ def slack(num_pulled,beta,time):
 
 
 def exp3(K,T,process_type,exp_rewards):
-    eta=1.0/float(K*T)
-    prob=[1/float(K)]*K
-
+    eta=1.0/math.sqrt(float(K*T))
+    prob=[1.0/float(K)]*K
     L=[0]*K
     expert_pulls=[0]*K
     reward_alg = [0]
@@ -139,8 +147,8 @@ def exp3(K,T,process_type,exp_rewards):
         L[arm]+=curr_rew/prob[arm]
         expert_pulls[arm]+=1
         prob[arm]=math.exp(eta*L[arm])
-        tmp=prob
-        prob=[jj/sum(tmp) for jj in tmp]
+        tmpp=prob
+        prob=[jj/sum(tmpp) for jj in tmpp]
 
     return reward_alg
 
@@ -159,7 +167,7 @@ def ucb(K,T,process_type,exp_rewards):
     for t in range(K, T):
         #find best arm
         ucb_list = [emp_avg[i] + slack(expert_pulls[i],beta,t) for i in range(K)] #soinefficient
-        best_arm = ucb_list.index(max(ucb_list)[0]) 
+        best_arm = ucb_list.index(max(ucb_list)) 
 
         best_expert_reward=exp_rewards[int(expert_pulls[best_arm])][best_arm]
 
@@ -212,35 +220,55 @@ def disc_ucb(K,T,process_type,exp_rewards,mt_changes):
 
 if __name__ == "__main__":
 
-    K=10 #experts
-    T=100 #time horizon
-    process_type=1
-    t=range(T+1)
+    K=100 #experts
+    T=500 #time horizon
+    NUM_FOLDS=50
+    taxis=range(K,T+1)
 
+    types = {1: 'i.i.d', 2: 'Rotten Arms', 3: 'Rarely Changing Means', 4: 'Drifting'}
     for process_type in range(1,5):
+        print process_type
         if process_type!=3:
-            print 'type'
-            print process_type
-            exp_rewards=experts_rewards(K,T,process_type)
-            mean_tchanges=[0]*K
-            de=disc_ucb(K,T,process_type,exp_rewards,mean_tchanges)
-            ee=exp3(K,T,process_type,exp_rewards)
+            exp_rewards=experts_rewards(K,T,process_type,NUM_FOLDS)
 
-            plt.figure()
-            plt.plot(t, de, 'r-', t,ee, 'b-')
-            plt.title('Process type'+str(process_type))
-            plt.show()
+            mean_tchanges=[0]*K
+            de=[]
+            ee=[]
+            for fd in range(NUM_FOLDS):
+                de.append(disc_ucb(K,T,process_type,exp_rewards[fd],mean_tchanges)[K:])
+                ee.append(exp3(K,T,process_type,exp_rewards[fd])[K:])
+            de=np.array(de)
+            ee=np.array(ee)
+
+            plt.plot(taxis, np.mean(de, axis=0), 'r-', taxis,np.mean(ee, axis=0), 'b-',linewidth=4.0)
+            plt.plot(taxis, np.mean(de, axis=0)+np.std(de, axis=0), 'r--', taxis,np.mean(ee, axis=0)+np.std(ee, axis=0), 'b--')
+            plt.plot(taxis, np.mean(de, axis=0)-np.std(de, axis=0), 'r--', taxis,np.mean(ee, axis=0)-np.std(ee, axis=0), 'b--')
+            plt.xlabel('Rounds')
+            plt.ylabel('Average Rewards')
+            plt.title(types[process_type])
+            plt.savefig('./process_type_'+types[process_type]+'.png', dpi=1000,bbox_inches='tight')
+
 
         else:
-            exp_rewards,mean_tchanges=experts_rewards(K,T,process_type)
+            exp_rewards,mean_tchanges=experts_rewards(K,T,process_type,NUM_FOLDS)
+            de=[]
+            ee=[]
+            for fd in range(NUM_FOLDS):
             
-            de=disc_ucb(K,T,process_type,exp_rewards,mean_tchanges)
-            ee=exp3(K,T,process_type,exp_rewards)
+                de.append(disc_ucb(K,T,process_type,exp_rewards[fd],mean_tchanges)[K:])
+                ee.append(exp3(K,T,process_type,exp_rewards[fd])[K:])
+            de=np.array(de)
+            ee=np.array(ee)
 
-            plt.figure()
-            plt.plot(t, de, 'r-', t,ee, 'b-')
-            plt.title('Process type'+str(process_type))
-            plt.show()
+            plt.plot(taxis, np.mean(de, axis=0), 'r-', taxis,np.mean(ee, axis=0), 'b-',linewidth=4.0)
+            plt.plot(taxis, np.mean(de, axis=0)+np.std(de, axis=0), 'r--', taxis,np.mean(ee, axis=0)+np.std(ee, axis=0), 'b--')
+            plt.plot(taxis, np.mean(de, axis=0)-np.std(de, axis=0), 'r--', taxis,np.mean(ee, axis=0)-np.std(ee, axis=0), 'b--')
+            plt.xlabel('Rounds')
+            plt.ylabel('Average Rewards')
+            plt.title(types[process_type])
+            plt.savefig('./process_type_'+types[process_type]+'.png', dpi=1000,bbox_inches='tight')
+
+
 
 
     
